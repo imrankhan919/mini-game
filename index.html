@@ -1,2 +1,266 @@
-<h1>Hello World! 2</h1>
-<h2>Hello From Eskills....</h2>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HELI-FLY</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            background: #0a0e1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Share Tech Mono', monospace
+        }
+
+        canvas {
+            display: block;
+            border-radius: 8px;
+            border: 1px solid #1e3a5f;
+            cursor: pointer
+        }
+
+        #hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 640px;
+            padding: 8px 4px;
+            color: #7fbbff;
+            font-size: 13px
+        }
+
+        #hud span {
+            font-family: 'Orbitron', monospace;
+            font-size: 12px;
+            letter-spacing: 1px
+        }
+
+        #score-val,
+        #best-val {
+            color: #00e5ff;
+            font-weight: 700
+        }
+    </style>
+</head>
+
+<body>
+    <div id="hud">
+        <span>SCORE: <span id="score-val">0</span></span>
+        <span id="status-txt">CLICK / SPACE TO START</span>
+        <span>BEST: <span id="best-val">0</span></span>
+    </div>
+    <canvas id="c" width="640" height="420"></canvas>
+
+    <script>
+        const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+        const W = 640, H = 420;
+        canvas.width = W; canvas.height = H;
+        const scoreEl = document.getElementById('score-val'), bestEl = document.getElementById('best-val'), statusEl = document.getElementById('status-txt');
+        let state = 'idle', score = 0, best = 0, raf;
+        const GAP = 160, SPEED = 3, PIPE_W = 52, HELI_W = 44, HELI_H = 22;
+        let heliY, velY, pipes, tick, particles;
+
+        function init() {
+            heliY = H / 2; velY = 0; pipes = []; tick = 0; score = 0; particles = [];
+            scoreEl.textContent = '0';
+            if (state !== 'idle') statusEl.textContent = '';
+        }
+
+        function newPipe() {
+            const min = 60, max = H - 60 - GAP;
+            const top = min + Math.random() * (max - min);
+            pipes.push({ x: W, top, scored: false });
+        }
+
+        function spawnParticle(x, y, col) {
+            for (let i = 0; i < 12; i++)particles.push({ x, y, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, life: 1, col });
+        }
+
+        function drawHeli(x, y) {
+            ctx.save();
+            const b = Math.sin(tick * 0.25) * 1.5;
+            ctx.translate(x + HELI_W / 2, y + HELI_H / 2 + b);
+            ctx.fillStyle = '#1a3a6e';
+            ctx.beginPath(); ctx.ellipse(-2, 4, 22, 10, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#2a7fff';
+            ctx.beginPath(); ctx.ellipse(-2, 2, 20, 9, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#62b8ff';
+            ctx.beginPath(); ctx.ellipse(-2, 1, 18, 7.5, -0.1, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#99d4ff';
+            ctx.beginPath(); ctx.ellipse(4, -1, 7, 5, 0.2, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#1a3a6e';
+            ctx.fillRect(14, 2, 5, 4);
+            ctx.fillStyle = '#2a7fff';
+            ctx.fillRect(-22, 1, 4, 6);
+            const rot = tick * 0.35;
+            ctx.strokeStyle = 'rgba(200,230,255,0.8)'; ctx.lineWidth = 1.5;
+            for (let i = 0; i < 3; i++) {
+                const a = rot + i * Math.PI * 2 / 3;
+                ctx.beginPath(); ctx.moveTo(-2, -9); ctx.lineTo(-2 + Math.cos(a) * 22, -9 + Math.sin(a) * 4); ctx.stroke();
+            }
+            ctx.strokeStyle = 'rgba(200,230,255,0.5)'; ctx.lineWidth = 1;
+            const a2 = rot * 1.5;
+            for (let i = 0; i < 2; i++) {
+                const a = a2 + i * Math.PI;
+                ctx.beginPath(); ctx.moveTo(19, 3); ctx.lineTo(19 + Math.cos(a) * 8, 3 + Math.sin(a) * 2); ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        function drawPipe(p) {
+            const grad1 = ctx.createLinearGradient(p.x, 0, p.x + PIPE_W, 0);
+            grad1.addColorStop(0, '#0d2840'); grad1.addColorStop(0.3, '#1a4a7a'); grad1.addColorStop(1, '#0d2840');
+            ctx.fillStyle = grad1;
+            ctx.beginPath();
+            ctx.roundRect(p.x, 0, PIPE_W, p.top, 4);
+            ctx.fill();
+            ctx.fillStyle = '#1e6aaa';
+            ctx.fillRect(p.x - 4, p.top - 16, PIPE_W + 8, 16);
+            ctx.beginPath();
+            ctx.roundRect(p.x, p.top + GAP, PIPE_W, H - p.top - GAP, 4);
+            ctx.fill();
+            ctx.fillStyle = '#1e6aaa';
+            ctx.fillRect(p.x - 4, p.top + GAP, PIPE_W + 8, 16);
+            ctx.strokeStyle = 'rgba(100,200,255,0.15)'; ctx.lineWidth = 1;
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath(); ctx.moveTo(p.x + 8 + i * 14, 0); ctx.lineTo(p.x + 8 + i * 14, p.top); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(p.x + 8 + i * 14, p.top + GAP); ctx.lineTo(p.x + 8 + i * 14, H); ctx.stroke();
+            }
+        }
+
+        function drawBg() {
+            const g = ctx.createLinearGradient(0, 0, 0, H);
+            g.addColorStop(0, '#050c1a'); g.addColorStop(1, '#0a1930');
+            ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(200,230,255,0.5)';
+            for (let i = 0; i < 60; i++) {
+                const sx = (i * 137 + tick * 0.3) % W, sy = (i * 89) % H;
+                const r = i % 5 === 0 ? 1.5 : 0.8;
+                ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        function drawGround() {
+            ctx.fillStyle = '#0d2840'; ctx.fillRect(0, H - 18, W, 18);
+            ctx.fillStyle = '#1a4a7a'; ctx.fillRect(0, H - 18, W, 4);
+            ctx.fillStyle = 'rgba(100,200,255,0.2)';
+            for (let i = 0; i < W; i += 40) {
+                ctx.fillRect(i + ((tick * 2) % 40), H - 18, 20, 4);
+            }
+            ctx.fillStyle = '#0d2840'; ctx.fillRect(0, 0, W, 18);
+            ctx.fillStyle = '#1a4a7a'; ctx.fillRect(0, 14, W, 4);
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.save(); ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+                p.x += p.vx; p.y += p.vy; p.life -= 0.04;
+            });
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        let scorePopups = [];
+
+        function loop() {
+            tick++;
+            drawBg();
+            if (tick % 90 === 0) newPipe();
+            pipes.forEach(p => p.x -= SPEED + (score * 0.015));
+            pipes = pipes.filter(p => p.x > -PIPE_W - 10);
+            pipes.forEach(p => {
+                if (!p.scored && p.x + PIPE_W < 50) {
+                    p.scored = true; score++; scoreEl.textContent = score;
+                    if (score > best) { best = score; bestEl.textContent = best; }
+                    scorePopups.push({ x: 80, y: 60, t: 40 });
+                }
+            });
+            velY += 0.38; heliY += velY;
+            const hx = 50, hy = heliY;
+            let dead = false;
+            if (hy < 18 || hy + HELI_H > H - 18) dead = true;
+            pipes.forEach(p => {
+                if (hx + HELI_W - 6 > p.x && hx + 6 < p.x + PIPE_W) {
+                    if (hy + 4 < p.top || hy + HELI_H - 4 > p.top + GAP) dead = true;
+                }
+            });
+            if (dead) {
+                spawnParticle(hx + HELI_W / 2, heliY + HELI_H / 2, '#2a7fff');
+                spawnParticle(hx + HELI_W / 2, heliY + HELI_H / 2, '#62b8ff');
+                drawParticles();
+                pipes.forEach(drawPipe);
+                drawGround();
+                ctx.save();
+                ctx.fillStyle = 'rgba(5,12,26,0.7)'; ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#ff4466'; ctx.font = 'bold 36px Orbitron,monospace';
+                ctx.textAlign = 'center'; ctx.fillText('CRASH', W / 2, H / 2 - 24);
+                ctx.fillStyle = '#7fbbff'; ctx.font = '14px Orbitron,monospace';
+                ctx.fillText('SCORE: ' + score, W / 2, H / 2 + 12);
+                ctx.fillStyle = '#00e5ff';
+                ctx.fillText('CLICK / SPACE TO RETRY', W / 2, H / 2 + 44);
+                ctx.restore();
+                state = 'dead'; statusEl.textContent = '';
+                return;
+            }
+            pipes.forEach(drawPipe);
+            drawGround();
+            drawHeli(hx, hy);
+            drawParticles();
+            scorePopups.forEach(sp => {
+                ctx.save(); ctx.globalAlpha = sp.t / 40; ctx.fillStyle = '#00e5ff';
+                ctx.font = 'bold 16px Orbitron,monospace'; ctx.textAlign = 'left';
+                ctx.fillText('+1', sp.x, sp.y - (40 - sp.t) * 0.8); ctx.restore();
+                sp.t--;
+            });
+            scorePopups = scorePopups.filter(sp => sp.t > 0);
+            raf = requestAnimationFrame(loop);
+        }
+
+        function startGame() {
+            if (state === 'running') return;
+            cancelAnimationFrame(raf);
+            state = 'running'; init();
+            raf = requestAnimationFrame(loop);
+        }
+
+        function flap() {
+            if (state === 'dead' || state === 'idle') { startGame(); return; }
+            velY = -6.2;
+        }
+
+        canvas.addEventListener('click', flap);
+        document.addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); flap(); } });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false });
+
+        // Draw idle screen
+        (function drawIdle() {
+            drawBg();
+            ctx.fillStyle = 'rgba(5,12,26,0.5)'; ctx.fillRect(0, 0, W, H);
+            ctx.save();
+            ctx.fillStyle = '#2a7fff'; ctx.font = 'bold 40px Orbitron,monospace'; ctx.textAlign = 'center';
+            ctx.fillText('HELI-FLY', W / 2, H / 2 - 30);
+            ctx.fillStyle = '#7fbbff'; ctx.font = '14px Orbitron,monospace';
+            ctx.fillText('CLICK or SPACE to start', W / 2, H / 2 + 16);
+            ctx.fillStyle = 'rgba(100,200,255,0.3)'; ctx.font = '12px Share Tech Mono,monospace';
+            ctx.fillText('hold to rise · release to fall', W / 2, H / 2 + 42);
+            ctx.restore();
+            drawGround();
+        })();
+    </script>
+</body>
+
+</html>
